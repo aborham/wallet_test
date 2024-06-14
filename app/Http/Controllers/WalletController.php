@@ -3,98 +3,59 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use App\Models\Wallet;
-use App\Models\Transaction;
-use Illuminate\Support\Facades\DB;
+use App\Jobs\ProcessAddFunds;
+use App\Jobs\ProcessTransfer;
+use App\Jobs\ProcessWithdraw;
+use App\Services\WalletService;
 
 class WalletController extends Controller
 {
-    public function addFunds($userId, $amount, $paymentMethod)
+    protected $walletService;
+
+    public function __construct(WalletService $walletService)
     {
-        // Logic to add funds
-        $wallet = Wallet::firstOrCreate(['user_id' => $userId]);
-        $wallet->balance += $amount;
-        $wallet->save();
-
-        // Create a transaction record
-        Transaction::create([
-            'user_id' => $userId,
-            'type' => 'add_funds',
-            'amount' => $amount,
-            'status' => 'completed',
-        ]);
-
-        return [
-            'success' => true,
-            'message' => 'Funds added',
-            'new_balance' => $wallet->balance
-        ];
+        $this->walletService = $walletService;
     }
 
-    public function transfer($senderId, $recipientId, $amount)
+    public function addFunds(Request $request)
     {
-        // Logic to transfer funds
-        DB::transaction(function () use ($senderId, $recipientId, $amount) {
-            $senderWallet = Wallet::where('user_id', $senderId)->first();
-            $recipientWallet = Wallet::firstOrCreate(['user_id' => $recipientId]);
+        $userId = $request->input('user_id');
+        $amount = $request->input('amount');
+        $paymentMethod = $request->input('payment_method');
 
-            if ($senderWallet->balance < $amount) {
-                throw new \Exception('Insufficient funds');
-            }
+        $result = $this->walletService->addFunds($userId, $amount, $paymentMethod);
 
-            $senderWallet->balance -= $amount;
-            $recipientWallet->balance += $amount;
-
-            $senderWallet->save();
-            $recipientWallet->save();
-
-            // Create transaction records
-            Transaction::create([
-                'user_id' => $senderId,
-                'type' => 'transfer_out',
-                'amount' => $amount,
-                'status' => 'completed',
-            ]);
-
-            Transaction::create([
-                'user_id' => $recipientId,
-                'type' => 'transfer_in',
-                'amount' => $amount,
-                'status' => 'completed',
-            ]);
-        });
-
-        return [
-            'success' => true,
-            'message' => 'Funds transferred',
-            'new_balance' => Wallet::where('user_id', $senderId)->first()->balance
-        ];
+        return response()->json($result);
     }
 
-    public function withdraw($userId, $amount, $bankAccount)
+    public function transfer(Request $request)
     {
-        // Logic to withdraw funds
-        $wallet = Wallet::where('user_id', $userId)->first();
+        $senderId = $request->input('sender_id');
+        $recipientId = $request->input('recipient_id');
+        $amount = $request->input('amount');
 
-        if ($wallet->balance < $amount) {
-            throw new \Exception('Insufficient funds');
-        }
+        $result = $this->walletService->transfer($senderId, $recipientId, $amount);
 
-        $wallet->balance -= $amount;
-        $wallet->save();
+        return response()->json($result);
+    }
 
-        // Create a transaction record
-        Transaction::create([
-            'user_id' => $userId,
-            'type' => 'withdraw',
-            'amount' => $amount,
-            'status' => 'completed',
-        ]);
+    public function withdraw(Request $request)
+    {
+        $userId = $request->input('user_id');
+        $amount = $request->input('amount');
+        $bankAccount = $request->input('bank_account');
 
-        return [
-            'success' => true,
-            'message' => 'Funds withdrawn',
-            'new_balance' => $wallet->balance
-        ];
+        $result = $this->walletService->withdraw($userId, $amount, $bankAccount);
+
+        return response()->json($result);
+    }
+
+    public function generateUserTransactionsPdf(Request $request)
+    {
+        $userId = $request->input('user_id');
+
+        $result = $this->walletService->generateUserTransactionsPdf($userId);
+
+        return response()->json($result);
     }
 }
